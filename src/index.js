@@ -64,7 +64,7 @@ export class RoboClaw {
      * Internal method to execute a command through the priority queue.
      * Handles retries and timeouts.
      */
-    async _execute(address, command, args = [], types = [], priority = Priority.NORMAL) {
+    async _execute(address, command, args = [], types = [], respTypes = null, priority = Priority.NORMAL) {
         if (!this.connected) throw new NotConnectedError();
 
         const task = async () => {
@@ -72,7 +72,7 @@ export class RoboClaw {
 
             for (let attempt = 0; attempt <= this.retries; attempt++) {
                 try {
-                    return await this._sendAndReceive(address, command, args, types);
+                    return await this._sendAndReceive(address, command, args, types, respTypes);
                 } catch (error) {
                     lastError = error;
                     if (!(error instanceof CommunicationError) || attempt === this.retries) {
@@ -90,9 +90,9 @@ export class RoboClaw {
     /**
      * Low-level send and receive logic.
      */
-    async _sendAndReceive(address, command, args, types) {
+    async _sendAndReceive(address, command, args, argTypes, respTypes) {
         // 1. Construct packet
-        const formattedArgs = args.map((val, i) => ({ value: val, type: types[i] || 'byte' }));
+        const formattedArgs = args.map((val, i) => ({ value: val, type: argTypes[i] || 'byte' }));
         const packet = PacketManager.createPacket(address, command, formattedArgs);
 
         // 2. Send
@@ -108,11 +108,12 @@ export class RoboClaw {
             return true;
         } else {
             // Expect data + CRC
+            const effectiveRespTypes = respTypes !== null ? respTypes : argTypes;
             let responseBuffer;
             if (command === Commands.GETVERSION) {
                 responseBuffer = await this._readVariableResponseWithTimeout(48);
             } else {
-                responseBuffer = await this._readResponseWithTimeout(types);
+                responseBuffer = await this._readResponseWithTimeout(effectiveRespTypes);
             }
 
             PacketManager.verifyPacket(responseBuffer);
@@ -125,7 +126,7 @@ export class RoboClaw {
                 return dataPart.toString('utf8');
             }
 
-            return PacketManager.parseResponse(responseBuffer, types);
+            return PacketManager.parseResponse(responseBuffer, effectiveRespTypes);
         }
     }
 
@@ -454,6 +455,76 @@ export class RoboClaw {
             warnings: decodeStatus(warnStatus, WarningBits, WarningDescriptions),
             hasErrors: errorStatus !== 0,
             hasWarnings: warnStatus !== 0
+        };
+    }
+
+    /**
+     * Reads the full status of the controller.
+     * @param {number} address - Controller address.
+     */
+    /**
+     * Sets the functions of pins S3, S4, and S5.
+     * @param {number} address - Controller address.
+     * @param {number} s3mode - Mode for pin S3.
+     * @param {number} s4mode - Mode for pin S4.
+     * @param {number} s5mode - Mode for pin S5.
+     * @param {number} d1mode - Mode for pin CTRL1.
+     * @param {number} d2mode - Mode for pin CTRL2.
+     */
+    async setPinFunctions(address, s3mode, s4mode, s5mode, d1mode, d2mode) {
+        return this._execute(address, Commands.SETPINFUNCTIONS, [s3mode, s4mode, s5mode, d1mode, d2mode], ['byte', 'byte', 'byte', 'byte', 'byte']);
+    }
+
+    /**
+     * Reads the functions of pins S3, S4, and S5.
+     * @param {number} address - Controller address.
+     */
+    async readPinFunctions(address) {
+        const results = await this._execute(address, Commands.GETPINFUNCTIONS, [], ['byte', 'byte', 'byte', 'byte', 'byte']);
+        return {
+            success: true,
+            s3mode: results[0],
+            s4mode: results[1],
+            s5mode: results[2],
+            d1mode: results[3],
+            d2mode: results[4]
+        };
+    }
+
+    /**
+     * Sets the deadband and range values.
+     * @param {number} address - Controller address.
+     * @param {Object} settings - Settings object.
+     */
+    async setCtrlSettings(address, s) {
+        return this._execute(address, Commands.SETCTRLSETTINGS, [
+            s.s1revdeadband, s.s1fwddeadband, s.s1revlimit, s.s1fwdlimit, s.s1rangecenter, s.s1rangemin, s.s1rangemax,
+            s.s2revdeadband, s.s2fwddeadband, s.s2revlimit, s.s2fwdlimit, s.s2rangecenter, s.s2rangemin, s.s2rangemax
+        ], ['byte', 'byte', 'word', 'word', 'word', 'word', 'word', 'byte', 'byte', 'word', 'word', 'word', 'word', 'word']);
+    }
+
+    /**
+     * Reads the deadband and range values.
+     * @param {number} address - Controller address.
+     */
+    async getCtrlSettings(address) {
+        const results = await this._execute(address, Commands.GETCTRLSETTINGS, [], ['byte', 'byte', 'word', 'word', 'word', 'word', 'word', 'byte', 'byte', 'word', 'word', 'word', 'word', 'word']);
+        return {
+            success: true,
+            s1revdeadband: results[0],
+            s1fwddeadband: results[1],
+            s1revlimit: results[2],
+            s1fwdlimit: results[3],
+            s1rangecenter: results[4],
+            s1rangemin: results[5],
+            s1rangemax: results[6],
+            s2revdeadband: results[7],
+            s2fwddeadband: results[8],
+            s2revlimit: results[9],
+            s2fwdlimit: results[10],
+            s2rangecenter: results[11],
+            s2rangemin: results[12],
+            s2rangemax: results[13]
         };
     }
 
@@ -1058,5 +1129,361 @@ export class RoboClaw {
         };
 
         return this.queue.enqueue(task, Priority.NORMAL);
+    }
+
+    /**
+     * Reads the buffer status.
+     * @param {number} address - Controller address.
+     */
+    async readBuffers(address) {
+        const results = await this._execute(address, Commands.GETBUFFERS, [], ['byte', 'byte']);
+        return {
+            success: true,
+            buffer1: results[0],
+            buffer2: results[1]
+        };
+    }
+
+    /**
+     * Reads the PWM values.
+     * @param {number} address - Controller address.
+     */
+    async readPWMs(address) {
+        const results = await this._execute(address, Commands.GETPWMS, [], ['word', 'word']);
+        const convert = (val) => (val & 0x8000) ? val - 0x10000 : val;
+        return {
+            success: true,
+            pwm1: convert(results[0]),
+            pwm2: convert(results[1])
+        };
+    }
+
+    /**
+     * Reads the current values.
+     * @param {number} address - Controller address.
+     */
+    async readCurrents(address) {
+        const results = await this._execute(address, Commands.GETCURRENTS, [], ['word', 'word']);
+        const convert = (val) => (val & 0x8000) ? val - 0x10000 : val;
+        return {
+            success: true,
+            current1: convert(results[0]),
+            current2: convert(results[1])
+        };
+    }
+
+    /**
+     * Sets the default acceleration and deceleration for motor 1.
+     * @param {number} address - Controller address.
+     * @param {number} accel - Acceleration.
+     * @param {number} decel - Deceleration.
+     */
+    async setM1DefaultAccel(address, accel, decel) {
+        return this._execute(address, Commands.SETM1DEFAULTACCEL, [accel, decel], ['long', 'long']);
+    }
+
+    /**
+     * Sets the default acceleration and deceleration for motor 2.
+     * @param {number} address - Controller address.
+     * @param {number} accel - Acceleration.
+     * @param {number} decel - Deceleration.
+     */
+    async setM2DefaultAccel(address, accel, decel) {
+        return this._execute(address, Commands.SETM2DEFAULTACCEL, [accel, decel], ['long', 'long']);
+    }
+
+    /**
+     * Reads the default accelerations for both motors.
+     * @param {number} address - Controller address.
+     */
+    async getDefaultAccels(address) {
+        const results = await this._execute(address, Commands.GETDEFAULTACCELS, [], ['long', 'long', 'long', 'long']);
+        return {
+            success: true,
+            accel1: results[0],
+            decel1: results[1],
+            accel2: results[2],
+            decel2: results[3]
+        };
+    }
+
+    /**
+     * Sets the default speed for motor 1.
+     * @param {number} address - Controller address.
+     * @param {number} speed - Speed.
+     */
+    async setM1DefaultSpeed(address, speed) {
+        return this._execute(address, Commands.SETM1DEFAULTSPEED, [speed], ['word']);
+    }
+
+    /**
+     * Sets the default speed for motor 2.
+     * @param {number} address - Controller address.
+     * @param {number} speed - Speed.
+     */
+    async setM2DefaultSpeed(address, speed) {
+        return this._execute(address, Commands.SETM2DEFAULTSPEED, [speed], ['word']);
+    }
+
+    /**
+     * Reads the default speeds for both motors.
+     * @param {number} address - Controller address.
+     */
+    async getDefaultSpeeds(address) {
+        const results = await this._execute(address, Commands.GETDEFAULTSPEEDS, [], ['word', 'word']);
+        return {
+            success: true,
+            m1: results[0],
+            m2: results[1]
+        };
+    }
+
+    /**
+     * Sets the signal parameters.
+     * @param {number} address - Controller address.
+     * @param {Object} p - Parameters.
+     */
+    async setSignal(address, p) {
+        return this._execute(address, Commands.SETSIGNAL, [
+            p.index, p.signalType, p.mode, p.target,
+            p.minAction, p.maxAction, p.lowpass, p.timeout,
+            p.loadHome, p.minVal, p.maxVal, p.center,
+            p.deadband, p.powerexp, p.minout, p.maxout,
+            p.powermin, p.potentiometer
+        ], [
+            'byte', 'byte', 'byte', 'byte', 'word', 'word', 'byte', 'long',
+            'slong', 'slong', 'slong', 'slong', 'long', 'long', 'long', 'long', 'long', 'long'
+        ]);
+    }
+
+    /**
+     * Gets the signal parameters.
+     * @param {number} address - Controller address.
+     */
+    async getSignals(address) {
+        if (!this.connected) throw new NotConnectedError();
+
+        const task = async () => {
+            for (let attempt = 0; attempt <= this.retries; attempt++) {
+                try {
+                    await this.port.flushInput();
+                    await this.port.write(PacketManager.createPacket(address, Commands.GETSIGNALS, []));
+
+                    const responseBuffer = await this._readCountedResponse(255, 56);
+                    PacketManager.verifyPacket(responseBuffer);
+
+                    const count = responseBuffer[0];
+                    const signals = [];
+                    let offset = 1;
+
+                    for (let i = 0; i < count; i++) {
+                        const s = {};
+                        s.type = responseBuffer[offset++];
+                        s.mode = responseBuffer[offset++];
+                        s.target = responseBuffer[offset++];
+                        s.minAction = responseBuffer.readUInt16BE(offset); offset += 2;
+                        s.maxAction = responseBuffer.readUInt16BE(offset); offset += 2;
+                        s.lowpass = responseBuffer[offset++];
+                        s.timeout = responseBuffer.readUInt32BE(offset); offset += 4;
+                        s.loadHome = responseBuffer.readInt32BE(offset); offset += 4;
+                        s.minVal = responseBuffer.readInt32BE(offset); offset += 4;
+                        s.maxVal = responseBuffer.readInt32BE(offset); offset += 4;
+                        s.center = responseBuffer.readInt32BE(offset); offset += 4;
+                        s.deadband = responseBuffer.readUInt32BE(offset); offset += 4;
+                        s.powerexp = responseBuffer.readUInt32BE(offset); offset += 4;
+                        s.minout = responseBuffer.readUInt32BE(offset); offset += 4;
+                        s.maxout = responseBuffer.readUInt32BE(offset); offset += 4;
+                        s.powermin = responseBuffer.readUInt32BE(offset); offset += 4;
+                        s.potentiometer = responseBuffer.readUInt32BE(offset); offset += 4;
+                        signals.push(s);
+                    }
+                    return { success: true, count, signals };
+                } catch (error) {
+                    if (!(error instanceof CommunicationError || error instanceof CRCError || error instanceof PacketTimeoutError) || attempt === this.retries) {
+                        throw error;
+                    }
+                }
+            }
+            throw new CommunicationError(`Failed to read signals after ${this.retries + 1} attempts`);
+        };
+        return this.queue.enqueue(task, Priority.NORMAL);
+    }
+
+    /**
+     * Gets the current signals data from the controller.
+     * @param {number} address - Controller address.
+     */
+    async getSignalsData(address) {
+        if (!this.connected) throw new NotConnectedError();
+
+        const task = async () => {
+            for (let attempt = 0; attempt <= this.retries; attempt++) {
+                try {
+                    await this.port.flushInput();
+                    await this.port.write(PacketManager.createPacket(address, Commands.GETSIGNALSDATA, []));
+
+                    const responseBuffer = await this._readCountedResponse(255, 20);
+                    PacketManager.verifyPacket(responseBuffer);
+
+                    const count = responseBuffer[0];
+                    const signalsData = [];
+                    let offset = 1;
+
+                    for (let i = 0; i < count; i++) {
+                        signalsData.push({
+                            command: responseBuffer.readInt32BE(offset),
+                            position: responseBuffer.readInt32BE(offset + 4),
+                            percent: responseBuffer.readInt32BE(offset + 8),
+                            speed: responseBuffer.readInt32BE(offset + 12),
+                            speeds: responseBuffer.readInt32BE(offset + 16)
+                        });
+                        offset += 20;
+                    }
+                    return { success: true, count, signalsData };
+                } catch (error) {
+                    if (!(error instanceof CommunicationError || error instanceof CRCError || error instanceof PacketTimeoutError) || attempt === this.retries) {
+                        throw error;
+                    }
+                }
+            }
+            throw new CommunicationError(`Failed to read signals data after ${this.retries + 1} attempts`);
+        };
+        return this.queue.enqueue(task, Priority.NORMAL);
+    }
+
+    /**
+     * Gets CAN ESR register.
+     * @param {number} address - Controller address.
+     */
+    async canGetESR(address) {
+        const results = await this._execute(address, Commands.CANGETESR, [], ['long']);
+        return {
+            success: true,
+            esr: results[0]
+        };
+    }
+
+    /**
+     * Sends a CAN packet.
+     * @param {number} address - Controller address.
+     * @param {number} cobId - CAN object identifier.
+     * @param {number} rtr - Remote Transmission Request (0 or 1).
+     * @param {number[]} data - Data bytes (max 8).
+     */
+    async canPutPacket(address, cobId, rtr, data) {
+        if (data.length > 8) throw new Error("Data length must be no more than 8 bytes");
+
+        const paddedData = [...data, ...new Array(8 - data.length).fill(0)];
+        const args = [cobId, rtr, data.length, ...paddedData];
+        const types = ['word', 'byte', 'byte', 'byte', 'byte', 'byte', 'byte', 'byte', 'byte', 'byte', 'byte'];
+
+        return this._execute(address, Commands.CANPUTPACKET, args, types);
+    }
+
+    /**
+     * Reads a CAN packet from the controller.
+     * @param {number} address - Controller address.
+     */
+    async canGetPacket(address) {
+        if (!this.connected) throw new NotConnectedError();
+
+        const task = async () => {
+            for (let attempt = 0; attempt <= this.retries; attempt++) {
+                try {
+                    await this.port.flushInput();
+                    await this.port.write(PacketManager.createPacket(address, Commands.CANGETPACKET, []));
+
+                    const responseBuffer = await this._readResponseWithTimeout(['byte', 'word', 'byte', 'byte', 'byte', 'byte', 'byte', 'byte', 'byte', 'byte', 'byte', 'byte']);
+                    PacketManager.verifyPacket(responseBuffer);
+
+                    if (responseBuffer[0] === 0xFF) {
+                        return {
+                            success: true,
+                            valid: true,
+                            cobId: responseBuffer.readUInt16BE(1),
+                            rtr: responseBuffer[3],
+                            length: responseBuffer[4],
+                            data: Array.from(responseBuffer.subarray(5, 13))
+                        };
+                    } else {
+                        return { success: true, valid: false, cobId: 0, rtr: 0, length: 0, data: [] };
+                    }
+                } catch (error) {
+                    if (!(error instanceof CommunicationError || error instanceof CRCError || error instanceof PacketTimeoutError) || attempt === this.retries) {
+                        throw error;
+                    }
+                }
+            }
+            throw new CommunicationError(`Failed to read CAN packet after ${this.retries + 1} attempts`);
+        };
+
+        return this.queue.enqueue(task, Priority.NORMAL);
+    }
+
+    /**
+     * Writes to the local CANopen dictionary.
+     * @param {number} address - Controller address.
+     * @param {number} nodeId - Node ID.
+     * @param {number} index - Dictionary index.
+     * @param {number} subindex - Subindex.
+     * @param {number} value - Value to write.
+     * @param {number} size - Size in bytes.
+     */
+    async canOpenWriteLocalDict(address, nodeId, index, subindex, value, size) {
+        return this._execute(address, Commands.CANOPENWRITEDICT, [nodeId, index, subindex, value, size], ['byte', 'word', 'byte', 'long', 'byte']);
+    }
+
+    /**
+     * Reads from the local CANopen dictionary.
+     * @param {number} address - Controller address.
+     * @param {number} nodeId - Node ID.
+     * @param {number} index - Dictionary index.
+     * @param {number} subindex - Subindex.
+     */
+    async canOpenReadLocalDict(address, nodeId, index, subindex) {
+        return this._execute(address, Commands.CANOPENREADDICT, [nodeId, index, subindex], ['byte', 'word', 'byte'], ['long', 'byte', 'byte', 'long']);
+    }
+
+    /**
+     * Reads a word from the EEPROM.
+     * @param {number} address - Controller address.
+     * @param {number} eeAddress - EEPROM address (0-255).
+     */
+    async readEEPROM(address, eeAddress) {
+        if (!this.connected) throw new NotConnectedError();
+
+        const task = async () => {
+            for (let attempt = 0; attempt <= this.retries; attempt++) {
+                try {
+                    await this.port.flushInput();
+                    await this.port.write(PacketManager.createPacket(address, Commands.READEEPROM, []));
+                    await this.port.write(Buffer.from([eeAddress & 0xFF]));
+
+                    const responseBuffer = await this._readResponseWithTimeout(['word', 'word']); // Word value + Word CRC
+                    PacketManager.verifyPacket(responseBuffer);
+
+                    return {
+                        success: true,
+                        value: responseBuffer.readUInt16BE(0)
+                    };
+                } catch (error) {
+                    if (!(error instanceof CommunicationError || error instanceof CRCError || error instanceof PacketTimeoutError) || attempt === this.retries) {
+                        throw error;
+                    }
+                }
+            }
+            throw new CommunicationError(`Failed to read EEPROM after ${this.retries + 1} attempts`);
+        };
+        return this.queue.enqueue(task, Priority.NORMAL);
+    }
+
+    /**
+     * Writes a word to the EEPROM.
+     * @param {number} address - Controller address.
+     * @param {number} eeAddress - EEPROM address.
+     * @ laC-word - Word value to write.
+     */
+    async writeEEPROM(address, eeAddress, eeWord) {
+        return this._execute(address, Commands.WRITEEEPROM, [eeAddress, (eeWord >> 8) & 0xFF, eeWord & 0xFF], ['byte', 'byte', 'byte']);
     }
 }
