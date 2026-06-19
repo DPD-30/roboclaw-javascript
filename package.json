@@ -1,0 +1,24 @@
+{
+  "name": "roboclaw-javascript",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DPD-30/roboclaw-javascript.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/DPD-30/roboclaw-javascript/issues"
+  },
+  "homepage": "https://github.com/DPD-30/roboclaw-javascript#readme",
+  "dependencies": {
+    "serialport": "^13.0.0"
+  }
+}
