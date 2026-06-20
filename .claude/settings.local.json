@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./run-on-pi.sh npm *)",
+      "Bash(run-on-pi.sh npm *)"
+    ]
+  }
+}

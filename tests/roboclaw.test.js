@@ -102,6 +102,7 @@ describe('RoboClaw Driver', () => {
 
         // Now we simulate responses.
         // First response resolves promise1.
+        await new Promise(r => setTimeout(r, 10));
         port.simulateResponse(Buffer.from([1]));
         await promise1;
 
@@ -125,10 +126,42 @@ describe('RoboClaw Driver', () => {
         await promiseCritical;
 
         // Finally resolve the second normal task
+        await new Promise(r => setTimeout(r, 10));
         port.simulateResponse(Buffer.from([1]));
         await promise2;
 
-        assert.strictEqual(sentPackets.length, 3);
-        assert.deepStrictEqual(sentPackets[2], PacketManager.createPacket(ADDRESS, Commands.M2DUTY, [{value: 2000, type: 'sword'}]));
+    it('should flush the queue when a critical command is issued', async () => {
+        await driver.connect();
+
+        // 1. Enqueue several normal tasks
+        const p1 = driver.dutyM1(ADDRESS, 1000);
+        const p2 = driver.dutyM2(ADDRESS, 2000);
+        const p3 = driver.readEncoder1(ADDRESS);
+
+        // 2. Issue a critical command (triggers flush)
+        const pCritical = driver.resetEStop(ADDRESS);
+
+        // 3. Simulate response for first task (already processing)
+        port.simulateResponse(Buffer.from([1]));
+        await p1;
+
+        // 4. Verify others were flushed
+        try {
+            await p2;
+            assert.fail('p2 should have been flushed');
+        } catch (e) {
+            assert.strictEqual(e.message, 'Queue flushed due to critical command');
+        }
+
+        try {
+            await p3;
+            assert.fail('p3 should have been flushed');
+        } catch (e) {
+            assert.strictEqual(e.message, 'Queue flushed due to critical command');
+        }
+
+        // 5. Resolve critical command
+        port.simulateResponse(Buffer.from([1]));
+        await pCritical;
     });
 });

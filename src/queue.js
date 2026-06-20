@@ -32,6 +32,7 @@ export class PriorityQueue {
      * @returns {Promise} A promise that resolves when the task is completed.
      */
     enqueue(task, priority = Priority.NORMAL) {
+        console.log(`[Queue] Enqueuing task with priority ${priority}`);
         return new Promise((resolve, reject) => {
             this.queues[priority].push({ task, resolve, reject });
             this.processNext();

@@ -1,0 +1,67 @@
+name: Publish roboclaw-javascript
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  test:
+    name: Test package
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  publish:
+    name: Publish to npm
+    needs: test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org/'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify npm authentication
+        run: |
+          echo "Registry: $(npm config get registry)"
+          if npm whoami >/dev/null 2>&1; then
+            echo "npm whoami returned an authenticated user."
+          else
+            echo "npm whoami did not return an authenticated user. This is expected for OIDC-based trusted publishing because npm auth occurs during the publish command."
+          fi
+
+      - name: Publish package
+        run: npm publish --access public

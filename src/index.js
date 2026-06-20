@@ -69,6 +69,10 @@ export class RoboClaw {
     async _execute(address, command, args = [], types = [], respTypes = null, priority = Priority.NORMAL) {
         if (!this.connected) throw new NotConnectedError();
 
+        if (priority === Priority.CRITICAL) {
+            this.queue.flush();
+        }
+
         const task = async () => {
             let lastError;
 
@@ -323,6 +327,111 @@ export class RoboClaw {
     }
 
     /**
+     * Sets the acceleration and speed for motor 1.
+     * @param {number} address - Controller address.
+     * @param {number} accel - Acceleration value.
+     * @param {number} speed - Speed value.
+     */
+    async speedAccelM1(address, accel, speed) {
+        return this._execute(address, Commands.M1SPEEDACCEL, [accel, speed], ['long', 'slong']);
+    }
+
+    /**
+     * Sets the acceleration and speed for motor 2.
+     * @param {number} address - Controller address.
+     * @param {number} accel - Acceleration value.
+     * @param {number} speed - Speed value.
+     */
+    async speedAccelM2(address, accel, speed) {
+        return this._execute(address, Commands.M2SPEEDACCEL, [accel, speed], ['long', 'slong']);
+    }
+
+    /**
+     * Sets the acceleration and speed for both motors.
+     * @param {number} address - Controller address.
+     * @param {number} accel - Acceleration value.
+     * @param {number} speed1 - Speed value for motor 1.
+     * @param {number} speed2 - Speed value for motor 2.
+     */
+    async speedAccelM1M2(address, accel, speed1, speed2) {
+        return this._execute(address, Commands.MIXEDSPEEDACCEL, [accel, speed1, speed2], ['long', 'slong', 'slong']);
+    }
+
+    /**
+     * Sets the speed and distance for motor 1.
+     * @param {number} address - Controller address.
+     * @param {number} speed - Maximum speed.
+     * @param {number} distance - Target distance.
+     * @param {number} buffer - The buffer value to set.
+     */
+    async speedDistanceM1(address, speed, distance, buffer) {
+        return this._execute(address, Commands.M1SPEEDDIST, [speed, distance, buffer], ['slong', 'long', 'byte']);
+    }
+
+    /**
+     * Sets the speed and distance for motor 2.
+     * @param {number} address - Controller address.
+     * @param {number} speed - Maximum speed.
+     * @al_ laC-word distance - Target distance.
+     * @param {number} buffer - The buffer value to set.
+     */
+    async speedDistanceM2(address, speed, distance, buffer) {
+        return this._execute(address, Commands.M2SPEEDDIST, [speed, distance, buffer], ['slong', 'long', 'byte']);
+    }
+
+    /**
+     * Sets the speed and distance for both motors.
+     * @param {number} address - Controller address.
+     * @param {number} speed1 - Speed for motor 1.
+     * @param {number} distance1 - Distance for motor 1.
+     * @param {number} speed2 - Speed for motor 2.
+     * @param {number} distance2 - Distance for motor 2.
+     * @param {number} buffer - The buffer value to set.
+     */
+    async speedDistanceM1M2(address, speed1, distance1, speed2, distance2, buffer) {
+        return this._execute(address, Commands.MIXEDSPEEDDIST, [speed1, distance1, speed2, distance2, buffer], ['slong', 'long', 'slong', 'long', 'byte']);
+    }
+
+    /**
+     * Sets the acceleration, speed, and distance for motor 1.
+     * @param {number} address - Controller address.
+     * @param {number} accel - Acceleration value.
+     * @param {number} speed - Maximum speed.
+     * @param {number} distance - Target distance.
+     * @param {number} buffer - The buffer value to set.
+     */
+    async speedAccelDistanceM1(address, accel, speed, distance, buffer) {
+        return this._execute(address, Commands.M1SPEEDACCELDIST, [accel, speed, distance, buffer], ['long', 'slong', 'long', 'byte']);
+    }
+
+    /**
+     * Sets the acceleration, speed, and distance for motor 2.
+     * @param {number} address - Controller address.
+     * @param {number} accel - Acceleration value.
+     * @param {number} speed - Maximum speed.
+     * @param {number} distance - Target distance.
+     * @param {number} buffer - The buffer value to set.
+     */
+    async speedAccelDistanceM2(address, accel, speed, distance, buffer) {
+        return this._execute(address, Commands.M2SPEEDACCELDIST, [accel, speed, distance, buffer], ['long', 'slong', 'long', 'byte']);
+    }
+
+    /**
+     * Sets the acceleration, speed, and distance for both motors.
+     * @param {number} address - Controller address.
+     * @param {number} accel1 - Acceleration for motor 1.
+     * @param {number} speed1 - Speed for motor 1.
+     * @param {number} distance1 - Distance for motor 1.
+     * @param {number} accel2 - Acceleration for motor 2.
+     * @param {number} speed2 - Speed for motor 2.
+     * @param {number} distance2 - Distance for motor 2.
+     * @param {number} buffer - The buffer value to set.
+     */
+    async speedAccelDistanceM1M2(address, accel1, speed1, distance1, accel2, speed2, distance2, buffer) {
+        return this._execute(address, Commands.MIXEDSPEEDACCELDIST, [accel1, speed1, distance1, accel2, speed2, distance2, buffer], ['long', 'slong', 'long', 'long', 'slong', 'long', 'byte']);
+    }
+
+    /**
      * Read encoder count for Motor 1.
      * @param {number} address - Controller address.
      */
@@ -531,6 +640,14 @@ export class RoboClaw {
     }
 
     // --- Advanced Command API ---
+
+    /**
+     * Saves the active settings to non-volatile memory (NVM).
+     * @param {number} address - Controller address.
+     */
+    async readNVM(address) {
+        return this._execute(address, Commands.READNVM, [], []);
+    }
 
     /**
      * Saves the active settings to non-volatile memory (NVM).
@@ -951,6 +1068,167 @@ export class RoboClaw {
      */
     async percentPositionM1M2(address, position1, position2, buffer) {
         return this._execute(address, Commands.MIXEDPPOS, [position1, position2, buffer], ['sword', 'sword', 'byte']);
+    }
+
+    /**
+     * Sets the position error limits for both motors.
+     * @param {number} address - Controller address.
+     * @param {number} limit1 - Motor 1 position error limit (0 to 65535).
+     * @param {number} limit2 - Motor 2 position error limit (0 to 65535).
+     */
+    async setPosErrorLimit(address, limit1, limit2) {
+        return this._execute(address, Commands.SETPOSERRORLIMIT, [limit1, limit2], ['word', 'word']);
+    }
+
+    /**
+     * Reads the position error limits.
+     * @param {number} address - Controller address.
+     */
+    async getPosErrorLimit(address) {
+        const results = await this._execute(address, Commands.GETPOSERRORLIMIT, [], ['word', 'word']);
+        return {
+            success: true,
+            limit1: results[0],
+            limit2: results[1]
+        };
+    }
+
+    /**
+     * Reads current position errors.
+     * @param {number} address - Controller address.
+     */
+    async getPosErrors(address) {
+        const results = await this._execute(address, Commands.GETPOSERRORS, [], ['word', 'word']);
+        return {
+            success: true,
+            error1: results[0],
+            error2: results[1]
+        };
+    }
+
+    /**
+     * Sets voltage offsets.
+     * @param {number} address - Controller address.
+     * @param {number} offset1 - MBat voltage offset (0 to 255).
+     * @param {number} offset2 - LBat voltage offset (0 to 255).
+     */
+    async setOffsets(address, offset1, offset2) {
+        return this._execute(address, Commands.SETOFFSETS, [offset1, offset2], ['byte', 'byte']);
+    }
+
+    /**
+     * Reads voltage offsets.
+     * @param {number} address - Controller address.
+     */
+    async getOffsets(address) {
+        const results = await this._execute(address, Commands.GETOFFSETS, [], ['byte', 'byte']);
+        return {
+            success: true,
+            mbatoffset: results[0] ? (results[0] & 0x80 ? results[0] - 256 : results[0]) : 0,
+            lbatoffset: results[1] ? (results[1] & 0x80 ? results[1] - 256 : results[1]) : 0
+        };
+    }
+
+    /**
+     * Sets motor 1 Inductance/Resistance.
+     * @param {number} address - Controller address.
+     * @param {number} L - Inductance in Henries.
+     * @param {number} R - Resistance in Ohms.
+     */
+    async setM1LR(address, L, R) {
+        const scale = 0x1000000;
+        return this._execute(address, Commands.SETM1LR, [Math.floor(L * scale), Math.floor(R * scale)], ['long', 'long']);
+    }
+
+    /**
+     * Reads motor 1 Inductance/Resistance.
+     * @param {number} address - Controller address.
+     */
+    async getM1LR(address) {
+        const results = await this._execute(address, Commands.GETM1LR, [], ['long', 'long']);
+        const scale = 0x1000000;
+        return {
+            success: true,
+            L: results[0] / scale,
+            R: results[1] / scale
+        };
+    }
+
+    /**
+     * Sets motor 2 Inductance/Resistance.
+     * @param {number} address - Controller address.
+     * @param {number} L - Inductance in Henries.
+     * @param {number} R - Resistance in Ohms.
+     */
+    async setM2LR(address, L, R) {
+        const scale = 0x1000000;
+        return this._execute(address, Commands.SETM2LR, [Math.floor(L * scale), Math.floor(R * scale)], ['long', 'long']);
+    }
+
+    /**
+     * Reads motor 2 Inductance/Resistance.
+     * @param {number} address - Controller address.
+     */
+    async getM2LR(address) {
+        const results = await this._execute(address, Commands.GETM2LR, [], ['long', 'long']);
+        const scale = 0x1000000;
+        return {
+            success: true,
+            L: results[0] / scale,
+            R: results[1] / scale
+        };
+    }
+
+    /**
+     * Sets the node ID.
+     * @param {number} address - Controller address.
+     * @param {number} nodeid - Node ID (0 to 255).
+     */
+    async setNodeID(address, nodeid) {
+        return this._execute(address, Commands.SETNODEID, [nodeid], ['byte']);
+    }
+
+    /**
+     * Gets the node ID.
+     * @param {number} address - Controller address.
+     */
+    async getNodeID(address) {
+        const results = await this._execute(address, Commands.GETNODEID, [], ['byte']);
+        return {
+            success: true,
+            nodeid: results[0]
+        };
+    }
+
+    /**
+     * Sets the PWM idle parameters.
+     * @param {number} address - Controller address.
+     * @param {number} idledelay1 - Idle delay 1 (0 to 12.7 seconds).
+     * @param {boolean} idlemode1 - Idle mode 1 (True = enable, False = disable).
+     * @param {number} idledelay2 - Idle delay 2 (0 to 12.7 seconds).
+     * @param {boolean} idlemode2 - Idle mode 2 (True = enable, False = disable).
+     */
+    async setPWMIdle(address, idledelay1, idlemode1, idledelay2, idlemode2) {
+        const byte1 = (Math.floor(idledelay1 * 10) & 0x7F) | (idlemode1 ? 0x80 : 0x00);
+        const byte2 = (Math.floor(idledelay2 * 10) & 0x7F) | (idlemode2 ? 0x80 : 0x00);
+        return this._execute(address, Commands.SETPWMIDLE, [byte1, byte2], ['byte', 'byte']);
+    }
+
+    /**
+     * Gets the PWM idle parameters.
+     * @param {number} address - Controller address.
+     */
+    async getPWMIdle(address) {
+        const results = await this._execute(address, Commands.GETPWMIDLE, [], ['byte', 'byte']);
+        const val1 = results[0];
+        const val2 = results[1];
+        return {
+            success: true,
+            idledelay1: (val1 & 0x7F) / 10,
+            idlemode1: Boolean(val1 & 0x80),
+            idledelay2: (val2 & 0x7F) / 10,
+            idlemode2: Boolean(val2 & 0x80)
+        };
     }
 
     /**

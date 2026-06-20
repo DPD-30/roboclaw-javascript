@@ -2,10 +2,23 @@
   "name": "roboclaw-javascript",
   "version": "1.0.0",
   "type": "module",
-  "description": "",
-  "main": "index.js",
+  "description": "Node.js driver for RoboClaw motor controllers.",
+  "main": "./src/index.js",
+  "module": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
-    "test": "mocha tests/**/*.test.js"
+    "test": "mocha tests/**/*.test.js",
+    "prepublishOnly": "npm test"
   },
   "repository": {
     "type": "git",
@@ -13,7 +26,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/DPD-30/roboclaw-javascript/issues"
   },
