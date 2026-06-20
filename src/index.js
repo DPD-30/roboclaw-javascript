@@ -15,13 +15,13 @@ import {
  * Main driver class for RoboClaw motor controllers.
  */
 export class RoboClaw {
-    constructor(path, baudRate = 38400, timeout = 100, retries = 2) {
+    constructor(path, baudRate = 38400, timeout = 100, retries = 2, port = null) {
         this.path = path;
         this.baudRate = baudRate;
         this.timeout = timeout;
         this.retries = retries;
 
-        this.port = null;
+        this.port = port;
         this.queue = new PriorityQueue();
         this.connected = false;
     }
@@ -33,11 +33,13 @@ export class RoboClaw {
         if (this.connected) return;
 
         try {
-            this.port = new SerialPort({
-                path: this.path,
-                baudRate: this.baudRate,
-                autoOpen: false
-            });
+            if (!this.port) {
+                this.port = new SerialPort({
+                    path: this.path,
+                    baudRate: this.baudRate,
+                    autoOpen: false
+                });
+            }
 
             await this.port.open();
             this.connected = true;
@@ -956,7 +958,7 @@ export class RoboClaw {
      * @param {number} address - Controller address.
      */
     async resetEStop(address) {
-        return this._execute(address, Commands.RESETESTOP, [], []);
+        return this._execute(address, Commands.RESETESTOP, [], [], null, Priority.CRITICAL);
     }
 
     /**
@@ -968,7 +970,7 @@ export class RoboClaw {
         if (![0x55, 0xAA, 0].includes(state)) {
             throw new Error("Invalid state value. Must be 0x55, 0xAA, or 0.");
         }
-        return this._execute(address, Commands.SETESTOPLOCK, [state], ['byte']);
+        return this._execute(address, Commands.SETESTOPLOCK, [state], ['byte'], null, Priority.CRITICAL);
     }
 
     /**

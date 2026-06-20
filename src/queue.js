@@ -74,10 +74,14 @@ export class PriorityQueue {
      * Used during E-Stop or critical state transitions.
      */
     flush() {
+        const normal = [...this.queues[Priority.NORMAL]];
+        const low = [...this.queues[Priority.LOW]];
+
         this.queues[Priority.NORMAL] = [];
         this.queues[Priority.LOW] = [];
+
         // Reject all flushed tasks
-        [...this.queues[Priority.NORMAL], ...this.queues[Priority.LOW]].forEach(item => {
+        [...normal, ...low].forEach(item => {
             item.reject(new Error("Queue flushed due to critical command"));
         });
     }
