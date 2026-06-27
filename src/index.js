@@ -1,4 +1,4 @@
-import SerialPort from 'serialport';
+import { SerialPort } from 'serialport';
 import { PriorityQueue, Priority } from './queue.js';
 import { PacketManager } from './packet.js';
 import { TypeMap } from './types.js';
@@ -102,6 +102,7 @@ export class RoboClaw {
         const packet = PacketManager.createPacket(address, command, formattedArgs);
 
         // 2. Send
+        console.log(`[Serial] Sending: ${packet.toString('hex').toUpperCase()}`);
         await this.port.write(packet);
 
         // 3. Handle response based on whether command expects data
@@ -143,7 +144,8 @@ export class RoboClaw {
         const readCommands = new Set([
             Commands.GETTIMEOUT, Commands.GETM1ENC, Commands.GETM2SPEED,
             Commands.GETVERSION, Commands.GETMBATT, Commands.GETLBATT,
-            Commands.READM1PID, Commands.READM2PID, Commands.GETSTATUS
+            Commands.READM1PID, Commands.READM2PID, Commands.GETSTATUS,
+            Commands.GETERROR
             // ... add others
         ]);
         return readCommands.has(command);
@@ -151,8 +153,12 @@ export class RoboClaw {
 
     async _readByteWithTimeout() {
         return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => reject(new PacketTimeoutError()), this.timeout);
+            const timer = setTimeout(() => {
+                console.log(`[Timeout] _readByteWithTimeout fired after ${this.timeout}ms`);
+                reject(new PacketTimeoutError());
+            }, this.timeout);
             this.port.once('data', (data) => {
+                console.log(`[Data] _readByteWithTimeout received: ${data}`);
                 clearTimeout(timer);
                 resolve(data[0]);
             });
@@ -168,7 +174,10 @@ export class RoboClaw {
         expectedSize += 2;
 
         return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => reject(new PacketTimeoutError()), this.timeout * 5);
+            const timer = setTimeout(() => {
+                console.log(`[Timeout] _readResponseWithTimeout fired after ${this.timeout * 5}ms`);
+                reject(new PacketTimeoutError());
+            }, this.timeout * 5);
             const chunks = [];
             let bytesRead = 0;
 

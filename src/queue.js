@@ -58,6 +58,7 @@ export class PriorityQueue {
 
         this.processing = true;
         const { task, resolve, reject } = this.queues[priority].shift();
+        console.log(`[Queue] Processing task with priority ${priority}`);
 
         try {
             const result = await task();

@@ -54,18 +54,6 @@ describe('RoboClaw Driver', () => {
 
         await new Promise(r => setTimeout(r, 10));
 
-        // Expected response for readEncoder1: [long (4 bytes), byte (1 byte), CRC (2 bytes)]
-        // Long = 12345, Status = 0, CRC = ...
-        const data = Buffer.alloc(5);
-        data.writeUInt32BE(12345, 0);
-        data[4] = 0;
-
-        const fullPacket = PacketManager.createPacket(ADDRESS, 0, [
-            {value: 12345, type: 'long'},
-            {value: 0, type: 'byte'}
-        ], true); // true for response packet simulation?
-        // Wait, createPacket is for outgoing. I need to manually construct the response buffer.
-
         const respPayload = Buffer.alloc(5);
         respPayload.writeUInt32BE(12345, 0);
         respPayload[4] = 0;
@@ -80,88 +68,46 @@ describe('RoboClaw Driver', () => {
         assert.strictEqual(result.status, 0);
     });
 
-    it('should ensure critical commands jump the queue', async () => {
+    it('should ensure critical commands jump the queue and flush others', async () => {
         await driver.connect();
 
-        // We'll track the order of packets sent to the port
-        const sentPackets = [];
-        const originalWrite = port.write.bind(port);
-        port.write = async (data) => {
-            sentPackets.push(data);
-            return originalWrite(data);
-        };
+        console.log('Test: Enqueuing p1, p2, p3');
+        // 1. Enqueue several tasks
+        const p1 = driver.dutyM1(ADDRESS, 1000); // Processing first
+        const p2 = driver.dutyM2(ADDRESS, 2000); // Waiting
+        const p3 = driver.readEncoder1(ADDRESS);  // Waiting
 
-        // 1. Enqueue a normal task (won't resolve until we simulate ACK)
-        const promise1 = driver.dutyM1(ADDRESS, 1000);
-
-        // 2. Enqueue another normal task (will wait in queue)
-        const promise2 = driver.dutyM2(ADDRESS, 2000);
-
-        // 3. Enqueue a critical task (should jump to front of queue)
-        const promiseCritical = driver.resetEStop(ADDRESS);
-
-        // Now we simulate responses.
-        // First response resolves promise1.
-        await new Promise(r => setTimeout(r, 10));
-        port.simulateResponse(Buffer.from([1]));
-        await promise1;
-
-        // Now the queue should process the next item.
-        // It should pick the CRITICAL one before the other NORMAL one.
-
-        // Small delay to let queue process
-        await new Promise(r => setTimeout(r, 50));
-
-        // The second packet sent should be the resetEStop (Critical)
-        // Packet 0: dutyM1 (Normal)
-        // Packet 1: resetEStop (Critical)
-        // Packet 2: dutyM2 (Normal)
-
-        const packet1 = sentPackets[1];
-        const expectedCritical = PacketManager.createPacket(ADDRESS, Commands.RESETESTOP, []);
-        assert.deepStrictEqual(packet1, expectedCritical);
-
-        // Resolve the critical task
-        port.simulateResponse(Buffer.from([1]));
-        await promiseCritical;
-
-        // Finally resolve the second normal task
-        await new Promise(r => setTimeout(r, 10));
-        port.simulateResponse(Buffer.from([1]));
-        await promise2;
-
-    it('should flush the queue when a critical command is issued', async () => {
-        await driver.connect();
-
-        // 1. Enqueue several normal tasks
-        const p1 = driver.dutyM1(ADDRESS, 1000);
-        const p2 = driver.dutyM2(ADDRESS, 2000);
-        const p3 = driver.readEncoder1(ADDRESS);
-
-        // 2. Issue a critical command (triggers flush)
+        console.log('Test: Enqueuing pCritical');
+        // 2. Issue critical command (triggers flush of p2, p3)
         const pCritical = driver.resetEStop(ADDRESS);
 
-        // 3. Simulate response for first task (already processing)
+        console.log('Test: Resolving p1');
+        // 3. Resolve p1 (currently processing)
         port.simulateResponse(Buffer.from([1]));
         await p1;
+        console.log('Test: p1 resolved');
 
-        // 4. Verify others were flushed
+        // 4. Verify p2 and p3 were flushed
         try {
             await p2;
             assert.fail('p2 should have been flushed');
         } catch (e) {
+            console.log('Test: p2 rejected as expected');
             assert.strictEqual(e.message, 'Queue flushed due to critical command');
         }
-
         try {
             await p3;
             assert.fail('p3 should have been flushed');
         } catch (e) {
+            console.log('Test: p3 rejected as expected');
             assert.strictEqual(e.message, 'Queue flushed due to critical command');
         }
 
-        // 5. Resolve critical command
+        console.log('Test: Resolving pCritical');
+        // 5. Resolve critical command (should be next)
+        await new Promise(r => setTimeout(r, 200));
         port.simulateResponse(Buffer.from([1]));
         await pCritical;
+        console.log('Test: pCritical resolved');
     });
 });
