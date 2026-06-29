@@ -18,7 +18,7 @@
   },
   "scripts": {
     "test": "npm run test:unit",
-    "test:unit": "mocha $(find tests -name '*.test.js' ! -name '*.hw.test.js')",
+    "test:unit": "mocha $(find tests -name '*.test.js' ! -name '*.hw.test.js' ! -name '*hw.test.js')",
     "test:hw": "mocha tests/**/*.hw.test.js",
     "prepublishOnly": "npm run test:unit"
   },
