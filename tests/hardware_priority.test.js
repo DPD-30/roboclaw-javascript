@@ -7,7 +7,7 @@ describe('RoboClaw Hardware Priority Test', function() {
 
     let driver;
     const ADDRESS = 0x80;
-    const PORT = '/dev/ttyUSB0';
+    const PORT = '/dev/ttyACM0';
 
     before(async () => {
         driver = new RoboClaw(PORT, 38400, 1000, 2);
@@ -15,13 +15,14 @@ describe('RoboClaw Hardware Priority Test', function() {
     });
 
     after(async () => {
-        await driver.disconnect();
+        try {
+            if (driver) await driver.disconnect();
+        } catch (e) {
+            console.log(`[Teardown] disconnect failed: ${e.message}`);
+        }
     });
 
     it('should execute commands in priority order on hardware', async () => {
-        // This test is tricky because we can't easily "see" the queue on the hardware.
-        // We will use a sequence of commands and a critical command and verify no errors.
-
         console.log('Sending normal commands...');
         const p1 = driver.dutyM1(ADDRESS, 100);
         const p2 = driver.dutyM2(ADDRESS, 100);
@@ -29,20 +30,17 @@ describe('RoboClaw Hardware Priority Test', function() {
         console.log('Sending critical command (E-Stop Reset)...');
         const pCritical = driver.resetEStop(ADDRESS);
 
-        // The critical command should jump the queue.
-        // In a real scenario, we'd check that pCritical resolves before p1/p2 if they were delayed.
-        // Here we just verify they all eventually resolve.
+        const results = await Promise.allSettled([p1, p2, pCritical]);
 
-        const results = await Promise.all([p1, p2, pCritical]);
-        assert.deepStrictEqual(results, [true, true, true]);
-        console.log('All commands executed successfully.');
+        // Critical command MUST succeed
+        assert.strictEqual(results[2].status, 'fulfilled', 'Critical command should have succeeded');
+        assert.strictEqual(results[2].value, true);
+
+        console.log('Critical command executed. Others may have been flushed.');
     });
 
     it('should correctly flush the queue on critical command', async () => {
         // We can verify the flush by checking if normal commands are rejected.
-        // However, since the driver is fast, we need to "clog" the queue.
-
-        // We'll send a command that takes some time or just many commands.
         const tasks = [];
         for(let i=0; i<10; i++) {
             tasks.push(driver.dutyM1(ADDRESS, i));
@@ -51,15 +49,11 @@ describe('RoboClaw Hardware Priority Test', function() {
         console.log('Issuing critical command to flush queue...');
         const pCritical = driver.resetEStop(ADDRESS);
 
-        // Some of the tasks should have been flushed.
+        const results = await Promise.allSettled(tasks);
         let flushedCount = 0;
-        for (const task of tasks) {
-            try {
-                await task;
-            } catch (e) {
-                if (e.message === 'Queue flushed due to critical command') {
-                    flushedCount++;
-                }
+        for (const res of results) {
+            if (res.status === 'rejected' && res.reason && res.reason.message === 'Queue flushed due to critical command') {
+                flushedCount++;
             }
         }
 

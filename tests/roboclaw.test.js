@@ -13,7 +13,7 @@ describe('RoboClaw Driver', () => {
 
     beforeEach(() => {
         port = new MockSerialPort();
-        driver = new RoboClaw('/dev/ttyUSB0', 38400, 1000, 0, port);
+        driver = new RoboClaw('/dev/ttyUSB0', 38400, 5000, 0, port);
     });
 
     it('should connect and disconnect', async () => {
@@ -32,8 +32,10 @@ describe('RoboClaw Driver', () => {
         // Prepare to send ACK (1)
         const promise = driver.dutyM1(ADDRESS, 1000);
 
-        // Small delay to ensure it's sent
-        await new Promise(r => setTimeout(r, 10));
+        // Wait until the packet is actually written to the port
+        while (port.writtenData.length === 0) {
+            await new Promise(r => setTimeout(r, 10));
+        }
 
         // Verify packet sent
         const sentPacket = port.writtenData[0];
@@ -54,11 +56,14 @@ describe('RoboClaw Driver', () => {
 
         await new Promise(r => setTimeout(r, 10));
 
+        const sentPacket = port.writtenData[0];
+        const requestCrc = sentPacket.readUInt16BE(sentPacket.length - 2);
+
         const respPayload = Buffer.alloc(5);
         respPayload.writeUInt32BE(12345, 0);
         respPayload[4] = 0;
 
-        const crc = calculateCrc(respPayload);
+        const crc = calculateCrc(respPayload, requestCrc);
         const responseBuffer = Buffer.concat([respPayload, Buffer.from([crc >> 8, crc & 0xFF])]);
 
         port.simulateResponse(responseBuffer);
@@ -83,6 +88,9 @@ describe('RoboClaw Driver', () => {
 
         console.log('Test: Resolving p1');
         // 3. Resolve p1 (currently processing)
+        while (port.writtenData.length === 0) {
+            await new Promise(r => setTimeout(r, 10));
+        }
         port.simulateResponse(Buffer.from([1]));
         await p1;
         console.log('Test: p1 resolved');

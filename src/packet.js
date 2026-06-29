@@ -51,17 +51,18 @@ export class PacketManager {
      * Verifies a received packet against its calculated CRC.
      *
      * @param {Buffer} buffer - The received buffer.
+     * @param {number} [initialCrc=0] - The starting CRC value (usually the request's payload CRC).
      * @returns {boolean} True if CRC is valid.
      * @throws {CRCError} If CRC verification fails.
      */
-    static verifyPacket(buffer) {
+    static verifyPacket(buffer, initialCrc = 0) {
         if (buffer.length < 4) {
             throw new CRCError("Packet too short to contain CRC");
         }
 
         const dataPart = buffer.subarray(0, buffer.length - 2);
         const receivedCrc = buffer.readUInt16BE(buffer.length - 2);
-        const calculatedCrc = calculateCrc(dataPart);
+        const calculatedCrc = calculateCrc(dataPart, initialCrc);
 
         if (receivedCrc !== calculatedCrc) {
             throw new CRCError(`CRC mismatch: received 0x${receivedCrc.toString(16)}, calculated 0x${calculatedCrc.toString(16)}`);

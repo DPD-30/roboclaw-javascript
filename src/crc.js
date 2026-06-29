@@ -4,23 +4,28 @@
  */
 
 const CRC_POLYNOMIAL = 0x1021;
-const CRC_TABLE = new Uint16Array(256);
 
 /**
- * Initializes the CRC lookup table.
- * This is executed once at module load.
+ * Calculates the CRC16 for a given buffer.
+ *
+ * @param {Buffer} buffer - The data buffer to calculate CRC for.
+ * @param {number} [initialCrc=0] - The starting CRC value.
+ * @returns {number} The resulting 16-bit CRC value.
  */
-(function initializeCrcTable() {
-    for (let i = 0; i < 256; i++) {
-        let crc = i << 8;
+export function calculateCrc(buffer, initialCrc = 0) {
+    let crc = initialCrc;
+    for (let i = 0; i < buffer.length; i++) {
+        crc ^= (buffer[i] << 8);
         for (let j = 0; j < 8; j++) {
-            crc = (crc & 0x8000)
-                ? ((crc << 1) ^ CRC_POLYNOMIAL) & 0xFFFF
-                : (crc << 1) & 0xFFFF;
+            if ((crc & 0x8000) !== 0) {
+                crc = ((crc << 1) ^ CRC_POLYNOMIAL) & 0xFFFF;
+            } else {
+                crc = (crc << 1) & 0xFFFF;
+            }
         }
-        CRC_TABLE[i] = crc;
     }
-})();
+    return crc;
+}
 
 /**
  * Updates a CRC value with a single byte of data.
@@ -30,19 +35,13 @@ const CRC_TABLE = new Uint16Array(256);
  * @returns {number} The updated 16-bit CRC value.
  */
 export function updateCrc(crc, data) {
-    return ((crc << 8) ^ CRC_TABLE[((crc >> 8) ^ (data & 0xFF)) & 0xFF]) & 0xFFFF;
-}
-
-/**
- * Calculates the CRC16 for a given buffer.
- *
- * @param {Buffer} buffer - The data buffer to calculate CRC for.
- * @returns {number} The resulting 16-bit CRC value.
- */
-export function calculateCrc(buffer) {
-    let crc = 0;
-    for (let i = 0; i < buffer.length; i++) {
-        crc = updateCrc(crc, buffer[i]);
+    crc ^= (data << 8);
+    for (let j = 0; j < 8; j++) {
+        if ((crc & 0x8000) !== 0) {
+            crc = ((crc << 1) ^ CRC_POLYNOMIAL) & 0xFFFF;
+        } else {
+            crc = (crc << 1) & 0xFFFF;
+        }
     }
     return crc;
 }

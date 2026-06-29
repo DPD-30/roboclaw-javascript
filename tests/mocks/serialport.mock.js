@@ -24,9 +24,9 @@ export class MockSerialPort extends EventEmitter {
         return Promise.resolve();
     }
 
-    async flushInput() {
-        // Mock flush input does nothing as we control event emission
-        return Promise.resolve();
+    flush(callback) {
+        // Mock flush does nothing as we control event emission
+        if (callback) callback(null);
     }
 
     /**

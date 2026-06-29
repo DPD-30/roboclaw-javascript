@@ -66,7 +66,7 @@ export class RoboClaw {
      * Internal method to execute a command through the priority queue.
      * Handles retries and timeouts.
      */
-    async _execute(address, command, args = [], types = [], respTypes = null, priority = Priority.NORMAL) {
+    async _execute(address, command, args = [], types = [], respTypes = null, priority = Priority.NORMAL, expectResponse = true) {
         if (!this.connected) throw new NotConnectedError();
 
         if (priority === Priority.CRITICAL) {
@@ -78,7 +78,7 @@ export class RoboClaw {
 
             for (let attempt = 0; attempt <= this.retries; attempt++) {
                 try {
-                    return await this._sendAndReceive(address, command, args, types, respTypes);
+                    return await this._sendAndReceive(address, command, args, types, respTypes, expectResponse);
                 } catch (error) {
                     lastError = error;
                     if (!(error instanceof CommunicationError) || attempt === this.retries) {
@@ -93,17 +93,31 @@ export class RoboClaw {
         return this.queue.enqueue(task, priority);
     }
 
+    async _flushPort() {
+        return new Promise((resolve, reject) => {
+            this.port.flush((err) => {
+                if (err) reject(new CommunicationError(`Failed to flush port: ${err.message}`));
+                else resolve();
+            });
+        });
+    }
+
     /**
      * Low-level send and receive logic.
      */
-    async _sendAndReceive(address, command, args, argTypes, respTypes) {
+    async _sendAndReceive(address, command, args, argTypes, respTypes, expectResponse = true) {
+        await this._flushPort();
+
         // 1. Construct packet
         const formattedArgs = args.map((val, i) => ({ value: val, type: argTypes[i] || 'byte' }));
         const packet = PacketManager.createPacket(address, command, formattedArgs);
+        const packetCrc = packet.readUInt16BE(packet.length - 2);
 
         // 2. Send
         console.log(`[Serial] Sending: ${packet.toString('hex').toUpperCase()}`);
         await this.port.write(packet);
+
+        if (!expectResponse) return true;
 
         // 3. Handle response based on whether command expects data
         const isReadCommand = this._isReadCommand(command);
@@ -123,7 +137,7 @@ export class RoboClaw {
                 responseBuffer = await this._readResponseWithTimeout(effectiveRespTypes);
             }
 
-            PacketManager.verifyPacket(responseBuffer);
+            PacketManager.verifyPacket(responseBuffer, packetCrc);
 
             if (command === Commands.GETVERSION) {
                 const nullIndex = responseBuffer.indexOf(0);
@@ -139,15 +153,13 @@ export class RoboClaw {
 
 
     _isReadCommand(command) {
-        // Simple check: does this command usually return a value?
-        // In a full implementation, we'd use a lookup table.
-        const readCommands = new Set([
-            Commands.GETTIMEOUT, Commands.GETM1ENC, Commands.GETM2SPEED,
-            Commands.GETVERSION, Commands.GETMBATT, Commands.GETLBATT,
-            Commands.READM1PID, Commands.READM2PID, Commands.GETSTATUS,
-            Commands.GETERROR
-            // ... add others
-        ]);
+        // A command is a read command if it is explicitly in this set.
+        // We include all commands that return data (typically prefixed with GET or READ).
+        const readCommands = new Set(
+            Object.entries(Commands)
+                .filter(([name]) => name.startsWith('GET') || name.startsWith('READ') || name.startsWith('CANGET'))
+                .map(([, value]) => value)
+        );
         return readCommands.has(command);
     }
 
@@ -180,11 +192,27 @@ export class RoboClaw {
             }, this.timeout * 5);
             const chunks = [];
             let bytesRead = 0;
+            let nackTimer = null;
 
             const onData = (data) => {
+                if (nackTimer) {
+                    clearTimeout(nackTimer);
+                    nackTimer = null;
+                }
+
                 chunks.push(data);
                 bytesRead += data.length;
+
+                if (bytesRead === 1 && data[0] === 0) {
+                    nackTimer = setTimeout(() => {
+                        this.port.removeListener('data', onData);
+                        clearTimeout(timer);
+                        reject(new CommunicationError("Controller returned NACK"));
+                    }, 50);
+                }
+
                 if (bytesRead >= expectedSize) {
+                    if (nackTimer) clearTimeout(nackTimer);
                     this.port.removeListener('data', onData);
                     clearTimeout(timer);
                     resolve(Buffer.concat(chunks).subarray(0, expectedSize));
@@ -578,10 +606,76 @@ export class RoboClaw {
         };
     }
 
+    async getStatus(address) {
+        const results = await this._execute(address, Commands.GETSTATUS, [], ['long', 'long', 'word', 'word', 'word', 'word', 'word', 'word', 'long', 'long', 'long', 'long', 'word', 'word', 'word', 'word']);
+        return {
+            success: true,
+            ...results
+        };
+    }
+
+    async setDOUT(address, val) {
+        return this._execute(address, Commands.SETDOUT, [val], ['byte']);
+    }
+
+    async setStream(address, index, type, baudrate, timeout) {
+        return this._execute(address, Commands.SETSTREAM, [index, type, baudrate, timeout], ['byte', 'byte', 'long', 'long']);
+    }
+
+    async getStreams(address) {
+        if (!this.connected) throw new NotConnectedError();
+
+        const task = async () => {
+            for (let attempt = 0; attempt <= this.retries; attempt++) {
+                try {
+                    await this._flushPort();
+                    await this.port.write(PacketManager.createPacket(address, Commands.GETSTREAMS, []));
+
+                    const responseBuffer = await this._readCountedResponse(255, 9);
+                    PacketManager.verifyPacket(responseBuffer);
+
+                    const count = responseBuffer[0];
+                    const streams = [];
+                    let offset = 1;
+
+                    for (let i = 0; i < count; i++) {
+                        streams.push({
+                            type: responseBuffer[offset++],
+                            baudrate: responseBuffer.readUInt32BE(offset),
+                            timeout: responseBuffer.readUInt32BE(offset + 4)
+                        });
+                        offset += 9;
+                    }
+                    return { success: true, count, streams };
+                } catch (error) {
+                    if (!(error instanceof CommunicationError || error instanceof CRCError || error instanceof PacketTimeoutError) || attempt === this.retries) {
+                        throw error;
+                    }
+                }
+            }
+            throw new CommunicationError(`Failed to read streams after ${this.retries + 1} attempts`);
+        };
+        return this.queue.enqueue(task, Priority.NORMAL);
+    }
+
     /**
-     * Reads the full status of the controller.
+     * Sets the signal parameters.
      * @param {number} address - Controller address.
+     * @param {Object} p - Parameters.
      */
+    async setSignal(address, p) {
+        return this._execute(address, Commands.SETSIGNAL, [
+            p.index, p.signalType, p.mode, p.target,
+            p.minAction, p.maxAction, p.lowpass, p.timeout,
+            p.loadHome, p.minVal, p.maxVal, p.center,
+            p.deadband, p.powerexp, p.minout, p.maxout,
+            p.powermin, p.potentiometer
+        ], [
+            'byte', 'byte', 'byte', 'byte', 'word', 'word', 'byte', 'long',
+            'slong', 'slong', 'slong', 'slong', 'long', 'long', 'long', 'long', 'long', 'long'
+        ]);
+    }
+
     /**
      * Sets the functions of pins S3, S4, and S5.
      * @param {number} address - Controller address.
@@ -1245,7 +1339,7 @@ export class RoboClaw {
      * @param {number} address - Controller address.
      */
     async resetEStop(address) {
-        return this._execute(address, Commands.RESETESTOP, [], [], null, Priority.CRITICAL);
+        return this._execute(address, Commands.RESETESTOP, [], [], null, Priority.CRITICAL, false);
     }
 
     /**
@@ -1339,7 +1433,7 @@ export class RoboClaw {
         const task = async () => {
             for (let attempt = 0; attempt <= this.retries; attempt++) {
                 try {
-                    await this.port.flushInput();
+                    await this._flushPort();
                     await this.port.write(PacketManager.createPacket(address, Commands.GETDOUTS, []));
 
                     const responseBuffer = await this._readCountedResponse(255, 1);
@@ -1396,7 +1490,7 @@ export class RoboClaw {
         const task = async () => {
             for (let attempt = 0; attempt <= this.retries; attempt++) {
                 try {
-                    await this.port.flushInput();
+                    await this._flushPort();
                     await this.port.write(PacketManager.createPacket(address, Commands.GETSERIALNUMBER, []));
 
                     const responseBuffer = await this._readSerialNumberResponse();
@@ -1555,7 +1649,7 @@ export class RoboClaw {
         const task = async () => {
             for (let attempt = 0; attempt <= this.retries; attempt++) {
                 try {
-                    await this.port.flushInput();
+                    await this._flushPort();
                     await this.port.write(PacketManager.createPacket(address, Commands.GETSIGNALS, []));
 
                     const responseBuffer = await this._readCountedResponse(255, 56);
@@ -1608,7 +1702,7 @@ export class RoboClaw {
         const task = async () => {
             for (let attempt = 0; attempt <= this.retries; attempt++) {
                 try {
-                    await this.port.flushInput();
+                    await this._flushPort();
                     await this.port.write(PacketManager.createPacket(address, Commands.GETSIGNALSDATA, []));
 
                     const responseBuffer = await this._readCountedResponse(255, 20);
@@ -1679,7 +1773,7 @@ export class RoboClaw {
         const task = async () => {
             for (let attempt = 0; attempt <= this.retries; attempt++) {
                 try {
-                    await this.port.flushInput();
+                    await this._flushPort();
                     await this.port.write(PacketManager.createPacket(address, Commands.CANGETPACKET, []));
 
                     const responseBuffer = await this._readResponseWithTimeout(['byte', 'word', 'byte', 'byte', 'byte', 'byte', 'byte', 'byte', 'byte', 'byte', 'byte', 'byte']);
@@ -1744,7 +1838,7 @@ export class RoboClaw {
         const task = async () => {
             for (let attempt = 0; attempt <= this.retries; attempt++) {
                 try {
-                    await this.port.flushInput();
+                    await this._flushPort();
                     await this.port.write(PacketManager.createPacket(address, Commands.READEEPROM, []));
                     await this.port.write(Buffer.from([eeAddress & 0xFF]));
 

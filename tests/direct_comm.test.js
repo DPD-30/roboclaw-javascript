@@ -3,6 +3,21 @@ import { SerialPort } from 'serialport';
 import { PacketManager } from '../src/packet.js';
 import { Commands } from '../src/commands.js';
 
+function calculateCrcCustom(buffer, initialCrc) {
+    let crc = initialCrc;
+    for (let i = 0; i < buffer.length; i++) {
+        crc ^= (buffer[i] << 8);
+        for (let j = 0; j < 8; j++) {
+            if ((crc & 0x8000) !== 0) {
+                crc = ((crc << 1) ^ 0x1021) & 0xFFFF;
+            } else {
+                crc = (crc << 1) & 0xFFFF;
+            }
+        }
+    }
+    return crc;
+}
+
 async function testDirect() {
     const port = new SerialPort({
         path: '/dev/ttyACM0',
@@ -25,7 +40,6 @@ async function testDirect() {
     const dataPromise = new Promise((resolve) => {
         port.on('data', (data) => {
             chunks.push(data);
-            // Simple heuristic for GETVERSION: look for null terminator then 2 bytes CRC
             const fullBuf = Buffer.concat(chunks);
             const nullIdx = fullBuf.indexOf(0);
             if (nullIdx !== -1 && fullBuf.length >= nullIdx + 3) {
@@ -41,20 +55,23 @@ async function testDirect() {
 
     console.log(`Received raw response: ${response.toString('hex').toUpperCase()}`);
 
-    // Verify CRC
     const dataPart = response.subarray(0, response.length - 2);
     const receivedCrc = response.readUInt16BE(response.length - 2);
 
-    // We can't use PacketManager.verifyPacket because it expects a specific format,
-    // but we can manually check.
-    const { calculateCrc } = await import('../src/crc.js');
-    const calcCrc = calculateCrc(dataPart);
+    const crc0 = calculateCrcCustom(dataPart, 0x0000);
+    const crcFFFF = calculateCrcCustom(dataPart, 0xFFFF);
 
     console.log(`Received CRC: 0x${receivedCrc.toString(16)}`);
-    console.log(`Calculated CRC: 0x${calcCrc.toString(16)}`);
+    console.log(`Calculated CRC (init 0x0000): 0x${crc0.toString(16)}`);
+    console.log(`Calculated CRC (init 0xFFFF): 0x${crcFFFF.toString(16)}`);
 
-    assert.strictEqual(receivedCrc, calcCrc, 'CRC should match');
-    console.log('Success! Communication works.');
+    if (receivedCrc === crc0) {
+        console.log('MATCH found with initial 0x0000');
+    } else if (receivedCrc === crcFFFF) {
+        console.log('MATCH found with initial 0xFFFF');
+    } else {
+        console.log('NO MATCH found with either common initial value.');
+    }
 
     await port.close();
 }

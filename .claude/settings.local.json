@@ -4,7 +4,8 @@
       "Bash(./run-on-pi.sh npm *)",
       "Bash(run-on-pi.sh npm *)",
       "WebSearch",
-      "Bash(./run-on-pi.sh npx *)"
+      "Bash(./run-on-pi.sh npx *)",
+      "Bash(node *)"
     ]
   }
 }
