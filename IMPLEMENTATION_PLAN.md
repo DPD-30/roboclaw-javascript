@@ -39,9 +39,11 @@ Provide a high-reliability, asynchronous Node.js interface for the RoboClaw moto
 - [x] **Status Decoding**: Port `decode_error_status` and `decode_warning_status` into a `getStatusAnalysis()` method.
 
 ### Phase 4: Testing & Verification
-- [ ] **Mock Serial Port**: Create a mock for `serialport` to test packet construction and CRC without hardware.
-- [ ] **Integration Tests**: Verify communication with actual RoboClaw hardware on Pi Zero 2.
-- [ ] **Stress Testing**: Validate that the Prioritized Queue correctly handles E-Stops during heavy telemetry reads.
+- [x] **Mock Serial Port**: Create a mock for `serialport` to test packet construction and CRC without hardware.
+- [x] **Integration Tests**: Verify communication with actual RoboClaw hardware on Pi Zero 2. (Verified via `hardware_motors.test.js` and `hardware_movement.test.js`).
+- [x] **Stress Testing**: Validate that the Prioritized Queue correctly handles E-Stops during heavy telemetry reads.
+- [x] **Exhaustive Read Verification**: Verify all read functions against hardware. Current status: Core communication and CRC chaining verified. Found that several commands (e.g., `getVolts`, `getStatus`) timeout on firmware v4.2.8. Implementation of comprehensive `_isReadCommand` and NACK detection has been completed; remaining timeouts are attributed to firmware limitations.
+- [x] **CRC Session Management**: Implement stateful CRC verification where the response CRC is calculated using the request's payload CRC as the starting point.
 
 ---
 
