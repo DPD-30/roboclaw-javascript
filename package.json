@@ -17,8 +17,10 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "mocha tests/**/*.test.js",
-    "prepublishOnly": "npm test"
+    "test": "npm run test:unit",
+    "test:unit": "mocha $(find tests -name '*.test.js' ! -name '*.hw.test.js')",
+    "test:hw": "mocha tests/**/*.hw.test.js",
+    "prepublishOnly": "npm run test:unit"
   },
   "repository": {
     "type": "git",
